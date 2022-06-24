@@ -1,0 +1,93 @@
+---
+title: "Olympics EDA"
+author: "Xander Erkamp"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Olympics EDA
+
+Using my ETL program I now have a database that contains all this data on athletes around the world. There are a number of data points that could potentially be interesting to explore. There is data on the country the competitors represent, then there is data on the sports itself, there is biographical data, there are social media links, personal quotes, and much more.
+
+### Ballers
+
+Even though I'm a huge skateboarding fan, I wanted to have a look at the basketball data. It's the only ball game I enjoy watching.
+
+R makes it quite easy to work with Sqlite, make sure you have installed the package before continuing.
+
+```{r}
+#install.packages("RSQLite")
+```
+
+Behold! The Sqlite database I created with my ETL tool! <INSERT EVIL GENIUS GIF>
+
+```{r}
+library(DBI)
+con <- dbConnect(RSQLite::SQLite(), "data/olympics.db")
+
+dbListTables(con)
+dbListFields(con, "competitors")
+```
+
+That's quite a number of fields we can choose from. Let's have a look at all the records that have Basketball as their Discipline.
+
+```{r}
+ballers <- dbGetQuery(con, "SELECT CountryOfRepresentation, Gender, Height, Age FROM competitors WHERE Discipline = 'Basketball'")
+
+head(ballers)
+```
+
+That looks pretty good, but I think I'd like to split up that Height field and separate the metric from the imperial.
+
+```{r}
+ballers <- dbGetQuery(con, "SELECT CountryOfRepresentation, Gender, MAX(substr(Height, 1, instr(Height, '/') - 1)) AS HeightMetric FROM competitors WHERE Discipline = 'Basketball' GROUP BY CountryOfRepresentation")
+
+head(ballers)
+```
+
+That looks much better. I've also just queried the database to give me the tallest people for each country.
+
+After trying to combine two data frames for more information for the plotting below it seems I needed to do a little extra cleaning.
+
+```{r}
+
+ballers$CountryOfRepresentation[ballers$CountryOfRepresentation == "Islamic Republic of Iran"] <- "Iran"
+ballers$CountryOfRepresentation[ballers$CountryOfRepresentation == "People's Republic of China"] <- "China"
+ballers$CountryOfRepresentation[ballers$CountryOfRepresentation == "Republic of Korea"] <- "South Korea"
+ballers$CountryOfRepresentation[ballers$CountryOfRepresentation == "United States of America"] <- "USA"
+
+```
+
+## Does it Plot?
+
+Let's have a look at the the heights on top of a map.
+
+```{r}
+library(tidyverse)
+library(geosphere)
+library(ggplot2)
+library(maps)
+
+world <- map_data("world")
+
+centroids <- world %>% 
+  group_by(region) %>% 
+  group_modify(~ data.frame(centroid(cbind(.x$long, .x$lat))))
+
+fullmap <- full_join(ballers, centroids, by = c("CountryOfRepresentation" = "region"))
+fullmap <- na.omit(fullmap)
+
+p <- ggplot() 
+
+p <- p + geom_polygon(data=world, aes(x=long, y=lat, group = group),
+     colour="grey", fill="white" ) + coord_fixed(1.3)
+
+p <- p + geom_point(data=fullmap, aes(x=lon, y=lat, size = HeightMetric, colour = HeightMetric, alpha = 0.3))
+
+p
+
+```
