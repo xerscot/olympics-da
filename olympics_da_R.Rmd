@@ -17,10 +17,11 @@ Using my ETL program I now have a database that contains all this data on athlet
 
 Even though I'm a huge skateboarding fan, I wanted to have a look at the basketball data. It's the only ball game I enjoy watching.
 
-R makes it quite easy to work with Sqlite, make sure you have installed the package before continuing.
+R makes it quite easy to work with Sqlite, make sure you have installed the package before continuing. Also load the tidyverse package.
 
 ```{r}
 #install.packages("RSQLite")
+library(tidyverse)
 ```
 
 Behold! The Sqlite database I created with my ETL tool! <INSERT EVIL GENIUS GIF>
@@ -67,7 +68,6 @@ ballers$CountryOfRepresentation[ballers$CountryOfRepresentation == "United State
 Let's have a look at the the heights on top of a map.
 
 ```{r}
-library(tidyverse)
 library(geosphere)
 library(ggplot2)
 library(maps)
@@ -91,3 +91,68 @@ p <- p + geom_point(data=fullmap, aes(x=lon, y=lat, size = HeightMetric, colour 
 p
 
 ```
+
+## Give me a reason
+
+One of the items captured during the scraping is a reason for going into the sport. Let's use a wordcloud to see if something pops out.
+
+First we need to get our data:
+
+```{r}
+
+reasons <- dbGetQuery(con, "SELECT Reason FROM competitors WHERE Discipline = 'Basketball' AND Reason IS NOT NULL")
+
+head(reasons)
+
+```
+
+With the data set in place let's use it to build our wordcloud.
+
+```{r}
+library(wordcloud2)
+library(tm)
+
+docs <- Corpus(VectorSource(reasons))
+
+docs <- docs %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace)
+docs <- tm_map(docs, content_transformer(tolower))
+docs <- tm_map(docs, removeWords, c(stopwords("english"),"jan","feb","mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))
+
+dtm <- TermDocumentMatrix(docs) 
+matrix <- as.matrix(dtm) 
+words <- sort(rowSums(matrix),decreasing=TRUE) 
+df <- data.frame(word = names(words),freq=words)
+
+wordcloud2(data=df, size=1.6, color='random-dark')
+
+# Thank you: https://towardsdatascience.com/create-a-word-cloud-with-r-bde3e7422e8a
+```
+
+It's interesting to see how family members pop up in this word cloud. This data set is only 169 rows, now I am quite curious to see what it looks like on all the rows regardless of the sport.
+
+```{r}
+# The query below will return 7956 rows
+all_reasons <- dbGetQuery(con, "SELECT Reason FROM competitors WHERE Reason IS NOT NULL")
+
+docs_all <- Corpus(VectorSource(all_reasons))
+
+docs_all <- docs_all %>%
+  tm_map(removeNumbers) %>%
+  tm_map(removePunctuation) %>%
+  tm_map(stripWhitespace) 
+docs_all <- tm_map(docs_all, content_transformer(tolower))
+docs_all <- tm_map(docs_all, removeWords, c(stopwords("english"),"jan","feb","mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"))
+
+dtm_all <- TermDocumentMatrix(docs_all) 
+matrix_all <- as.matrix(dtm_all) 
+words_all <- sort(rowSums(matrix_all),decreasing=TRUE) 
+df_all <- data.frame(word = names(words_all),freq=words_all)
+
+wordcloud2(data=df_all, size=1.6, color='random-dark')
+
+```
+
+It's very interesting to see the wordcloud for the entire database. It looks like "school", "father", and "coach" were mentioned quite a bit in the reason athletes compete in the sport that they do.
